@@ -1,0 +1,7 @@
+# Core runtime dependency (CLI). For the web GUI, also install the [web] extra:
+#   pip install -e '.[web]'
+requests>=2.28
+
+# Web GUI (uncomment or install via the [web] extra):
+# fastapi>=0.110
+# uvicorn>=0.27

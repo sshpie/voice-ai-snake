@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Snake reports (never commit scan output)
+.snake/
+*.snake.json
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
