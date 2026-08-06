@@ -22,6 +22,7 @@ from .engine import (
     FAIL,
     GREEN,
     GREY,
+    OPEN,
     RED,
     RESET,
     SKIP,
@@ -36,6 +37,29 @@ from .engine import (
 # detail keys worth surfacing under a stage line
 _SHOW = {"open", "open_paths", "findings", "surfaces", "high_impact", "adjacent",
          "adjacent_count", "count", "n_paths", "sample", "jobs", "type", "bytes", "reachable"}
+
+# significance of known paths — shown in the open-path table when AUTH is OPEN
+_PATH_SIG: dict[str, str] = {
+    "/v1/chat/completions":     "LLM inference — send arbitrary prompts",
+    "/v1/completions":          "LLM completions (legacy OpenAI-compat)",
+    "/v1/audio/speech":         "TTS synthesis — generate audio",
+    "/v1/audio/transcriptions": "Audio → text transcription",
+    "/v1/audio/voices":         "Voice inventory",
+    "/transcribe":              "Transcription route",
+    "/asr":                     "Speech recognition endpoint",
+    "/v1/models":               "Model inventory — reveals loaded models",
+    "/slots":                   "Inference slot state — active sessions side-channel",
+    "/speakers":                "Speaker inventory — voice clone surface",
+    "/actuator/env":            "Spring Boot actuator — env vars / potential creds",
+    "/admin":                   "Admin panel",
+    "/config":                  "Config dump",
+    "/metrics":                 "Metrics endpoint",
+    "/health":                  "Health / version info",
+    "/openapi.json":            "API schema",
+    "/api/v1/targets":          "Prometheus scrape targets — topology leak",
+    "/queue-metrics":           "Job queue metrics",
+    "/detect-language":         "Language detection",
+}
 
 
 def render(results, host, port, service, elapsed) -> str:
@@ -65,6 +89,21 @@ def render(results, host, port, service, elapsed) -> str:
             for k, v in r.detail.items():
                 if k in _SHOW:
                     lines.append(f"  {' ' * 20}{c(DIM, k)}: {str(v)[:110]}")
+
+    # open path significance table
+    open_paths: list[str] = []
+    for r in results:
+        if r.name == "AUTH" and r.status == OPEN:
+            open_paths = r.detail.get("open", [])
+            break
+    if open_paths:
+        lines.append("")
+        lines.append(f"  {BOLD}OPEN PATHS{RESET}  {c(DIM, '(no auth required)')}")
+        col_w = max(len(p) for p in open_paths)
+        for p in open_paths:
+            pad = " " * (col_w - len(p) + 2)
+            sig = _PATH_SIG.get(p, "—")
+            lines.append(f"  {c(YELLOW, p)}{pad}{c(DIM, sig)}")
 
     # frontier
     last = results[-1]
