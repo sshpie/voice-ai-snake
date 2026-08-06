@@ -22,6 +22,7 @@ intrusive actions) and avoids spending a target's GPU time during discovery.
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import re
@@ -722,6 +723,47 @@ def save(host, port, service, results, elapsed, ctx) -> str:
         with open(path, "w") as f:
             json.dump(out, f, indent=2)
     return fname
+
+
+# ── port discovery sweep ──────────────────────────────────────────────────────
+# Same default port set as aimap — keeps the two tools in sync so a no-arg
+# snake call covers the same surface as an aimap scan.
+AI_PORTS = [
+    80, 443, 1984, 2379, 3000, 3001, 4000, 4040, 4200, 5000, 5001, 5678,
+    6333, 7575, 7576, 7860, 8000, 8001, 8080, 8081, 8088, 8123, 8233, 8265,
+    8443, 8501, 8787, 8888, 8889, 9000, 9090, 9091, 9200, 10000, 11434,
+    15500, 18080, 18789, 19530, 30000, 51000, 55000,
+]
+
+
+def _probe_port(host: str, port: int, timeout: float) -> dict | None:
+    """Try HTTPS then HTTP; return a port record on any HTTP response, else None."""
+    s = make_session()
+    for scheme in ("https", "http"):
+        r = get(s, f"{scheme}://{host}:{port}/", timeout=timeout)
+        if r is not None:
+            return {
+                "port": port,
+                "scheme": scheme,
+                "status": r.status_code,
+                "server": r.headers.get("server", "—"),
+            }
+    return None
+
+
+def sweep(host: str, ports: list[int] | None = None,
+          timeout: float = 3.0, threads: int = 24) -> list[dict]:
+    """Concurrent HTTP sweep over AI/ML ports; return live port records sorted by port."""
+    if ports is None:
+        ports = AI_PORTS
+    live: list[dict] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as ex:
+        futures = {ex.submit(_probe_port, host, p, timeout): p for p in ports}
+        for fut in concurrent.futures.as_completed(futures):
+            rec = fut.result()
+            if rec is not None:
+                live.append(rec)
+    return sorted(live, key=lambda r: r["port"])
 
 
 # ── runner ────────────────────────────────────────────────────────────────────

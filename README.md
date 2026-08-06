@@ -296,8 +296,17 @@ python snake.py 10.0.0.5 8880  # same CLI as the installed `snake` command
 ### CLI
 
 ```bash
-# auto-detect and run the full chain (passive)
+# auto-detect and run the full chain (passive) — port required
 snake 10.0.0.5 8880
+
+# no port: sweep all 42 AI/ML ports, chain against each live one
+snake 10.0.0.5
+
+# run chain against every service identified in an aimap JSON report
+snake --from-aimap report.json
+
+# combine aimap discovery with snake verification in one pipeline
+aimap -target 10.0.0.5 -o report.json && snake --from-aimap report.json
 
 # force a service type, actively confirm inference
 snake voice.example.com 8880 --service kokoro --active
@@ -315,6 +324,78 @@ snake --report last
 Also runnable as a module: `python -m snake_scanner 10.0.0.5 8880`.
 
 Honors `NO_COLOR` and non-TTY output automatically; force with `--no-color`.
+
+### Port discovery (no-port mode)
+
+When no port is given, snake sweeps the same 42 AI/ML ports that aimap scans by default, then chains against every port that responds over HTTP:
+
+```
+SWEEP  10.0.0.5  42 ports…
+  4 live  :80(404)  :443(200)  :8080(200)  :9000(200)
+
+────────────────────────────────────────────────────────────────
+
+🐍 SNAKE  10.0.0.5:443  generic  …
+  [AUTH ⚠] …
+
+────────────────────────────────────────────────────────────────
+
+…
+
+════════════════════════════════════════════════════════════════
+DISCOVER SUMMARY — 4 target(s)
+
+  10.0.0.5:443    OPEN  10 open  COMPUTE-THEFT
+  10.0.0.5:9000   —      0 open  no surface classified
+  10.0.0.5:8080   —      0 open  no surface classified
+  10.0.0.5:80     —      0 open  no surface classified
+```
+
+The sweep is concurrent (24 threads, 3s timeout per port) — wall time is dominated by the slowest single port, not the sum.
+
+### aimap integration (`--from-aimap`)
+
+If you already have an aimap report, snake reads it directly. It pulls from two sections:
+- `services[]` — fingerprint-confirmed AI services; service name is mapped to a snake `--service` hint so auto-detection is skipped
+- `open_ports[]` — any port returning 200 that aimap didn't fingerprint; chaineed with `--service auto`
+
+```
+FROM-AIMAP  report.json  3 target(s)
+
+────────────────────────────────────────────────────────────────
+  aimap hint: 10.0.0.5:9000  whisper-asr → whisper-modern
+
+🐍 SNAKE  10.0.0.5:9000  whisper-modern  …
+
+────────────────────────────────────────────────────────────────
+  aimap hint: 10.0.0.5:443  auto → auto
+
+🐍 SNAKE  10.0.0.5:443  generic  …
+  [AUTH ⚠] …
+
+════════════════════════════════════════════════════════════════
+AIMAP SUMMARY — 3 target(s)
+
+  10.0.0.5:443    OPEN  10 open  COMPUTE-THEFT
+  10.0.0.5:9000   —      0 open  no surface classified
+  10.0.0.5:8080   —      0 open  no surface classified
+```
+
+Service name mapping (aimap → snake):
+
+| aimap service | snake `--service` |
+|---------------|-------------------|
+| Whisper ASR | `whisper-modern` |
+| WhisperX | `whisperx` |
+| Kokoro | `kokoro` |
+| CosyVoice | `cosyvoice` |
+| vLLM | `vllm` |
+| Llama.cpp | `llamacpp` |
+| RTP-LLM | `generic` |
+| Chatterbox TTS API | `generic` |
+| Prometheus | `prometheus` |
+| Lunary | `lunary` |
+| (unknown) | `generic` |
 
 ### Web GUI
 

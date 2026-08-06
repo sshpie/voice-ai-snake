@@ -10,7 +10,9 @@ Do NOT edit by hand — edit the package and run `python tools/build_standalone.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
+import json as _json
 import os
 import re
 import sys
@@ -713,6 +715,47 @@ def save(host, port, service, results, elapsed, ctx) -> str:
     return fname
 
 
+# ── port discovery sweep ──────────────────────────────────────────────────────
+# Same default port set as aimap — keeps the two tools in sync so a no-arg
+# snake call covers the same surface as an aimap scan.
+AI_PORTS = [
+    80, 443, 1984, 2379, 3000, 3001, 4000, 4040, 4200, 5000, 5001, 5678,
+    6333, 7575, 7576, 7860, 8000, 8001, 8080, 8081, 8088, 8123, 8233, 8265,
+    8443, 8501, 8787, 8888, 8889, 9000, 9090, 9091, 9200, 10000, 11434,
+    15500, 18080, 18789, 19530, 30000, 51000, 55000,
+]
+
+
+def _probe_port(host: str, port: int, timeout: float) -> dict | None:
+    """Try HTTPS then HTTP; return a port record on any HTTP response, else None."""
+    s = make_session()
+    for scheme in ("https", "http"):
+        r = get(s, f"{scheme}://{host}:{port}/", timeout=timeout)
+        if r is not None:
+            return {
+                "port": port,
+                "scheme": scheme,
+                "status": r.status_code,
+                "server": r.headers.get("server", "—"),
+            }
+    return None
+
+
+def sweep(host: str, ports: list[int] | None = None,
+          timeout: float = 3.0, threads: int = 24) -> list[dict]:
+    """Concurrent HTTP sweep over AI/ML ports; return live port records sorted by port."""
+    if ports is None:
+        ports = AI_PORTS
+    live: list[dict] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as ex:
+        futures = {ex.submit(_probe_port, host, p, timeout): p for p in ports}
+        for fut in concurrent.futures.as_completed(futures):
+            rec = fut.result()
+            if rec is not None:
+                live.append(rec)
+    return sorted(live, key=lambda r: r["port"])
+
+
 # ── runner ────────────────────────────────────────────────────────────────────
 def run(host, port, service: str = "auto", active: bool = False):
     """Run the whole chain; return (results, elapsed, service, ctx)."""
@@ -884,6 +927,108 @@ def run_batch(filepath, service="auto", active=False, use_color=True) -> None:
               f"{s['open']:>2} open  {c(DIM, surfs)}", use_color)
 
 
+# aimap service name → snake --service choice
+_AIMAP_SERVICE_MAP: dict[str, str] = {
+    "whisper asr": "whisper-modern",
+    "whisperx": "whisperx",
+    "kokoro": "kokoro",
+    "cosyvoice": "cosyvoice",
+    "vllm": "vllm",
+    "llama.cpp": "llamacpp",
+    "llamacpp": "llamacpp",
+    "rtp-llm": "generic",
+    "chatterbox tts api": "generic",
+    "chatterbox": "generic",
+    "prometheus": "prometheus",
+    "lunary": "lunary",
+}
+
+
+def _parse_aimap_targets(path: str) -> list[tuple[str, int, str]]:
+    """Parse an aimap JSON report; return (host, port, snake_service) tuples."""
+    with open(path) as f:
+        data = _json.load(f)
+    targets: dict[tuple[str, int], str] = {}
+
+    # services[] — fingerprint-confirmed; carry the service hint forward
+    for s in data.get("services", []):
+        key = (s["host"], s["port"])
+        targets[key] = _AIMAP_SERVICE_MAP.get(s["service"].lower(), "generic")
+
+    # open_ports[] — any 200-responding port not already covered by services[]
+    for p in data.get("open_ports", []):
+        if p.get("status_code") == 200:
+            key = (p["host"], p["port"])
+            if key not in targets:
+                targets[key] = "auto"
+
+    return [(h, p, s) for (h, p), s in sorted(targets.items(), key=lambda x: x[0][1])]
+
+
+def _ranked_summary(summary: list[dict], use_color: bool, title: str) -> None:
+    _emit("\n" + "═" * 64, use_color)
+    _emit(f"{BOLD}{title}{RESET} — {len(summary)} target(s)\n", use_color)
+    for s in sorted(summary, key=lambda x: (len(x["surfaces"]), x["open"]), reverse=True):
+        exposed = s["open"] or s["surfaces"]
+        flag = c(YELLOW, "OPEN") if exposed else c(GREY, "—   ")
+        surfs = ", ".join(s["surfaces"][:3]) or "no surface classified"
+        label = f"{s['host']}:{s['port']}"
+        pad = " " * max(1, 24 - len(label))
+        _emit(f"  {c(CYAN, label)}{pad}{flag}  {s['open']:>2} open  {c(DIM, surfs)}", use_color)
+
+
+def run_discover(host: str, service: str = "auto",
+                 active: bool = False, use_color: bool = True) -> None:
+    """Sweep AI/ML ports on `host`, then chain against each live port."""
+    _emit(f"\n{BOLD}SWEEP{RESET}  {c(CYAN, host)}"
+          f"  {c(DIM, str(len(engine.AI_PORTS)) + ' ports…')}", use_color)
+    live = engine.sweep(host)
+    if not live:
+        _emit(f"  {c(GREY, 'no live HTTP ports found')}", use_color)
+        return
+    port_list = "  ".join(f":{r['port']}({r['status']})" for r in live)
+    _emit(f"  {c(GREEN, str(len(live)) + ' live')}  {c(DIM, port_list)}\n", use_color)
+
+    summary = []
+    for rec in live:
+        port = rec["port"]
+        _emit("─" * 64, use_color)
+        results, elapsed, svc, ctx = engine.run(host, port, service, active=active)
+        _emit(render(results, host, port, svc, elapsed), use_color)
+        engine.save(host, port, svc, results, elapsed, ctx)
+        summary.append({"host": host, "port": port, "svc": svc,
+                        "open": len(ctx.get("open_paths", [])),
+                        "surfaces": ctx.get("exploit_surfaces", [])})
+
+    _ranked_summary(summary, use_color, "DISCOVER SUMMARY")
+
+
+def run_from_aimap(filepath: str, service_override: str = "auto",
+                   active: bool = False, use_color: bool = True) -> None:
+    """Run the chain against every service identified in an aimap JSON report."""
+    targets = _parse_aimap_targets(filepath)
+    if not targets:
+        _emit(f"  {c(GREY, 'no targets found in aimap report')}", use_color)
+        return
+    _emit(f"\n{BOLD}FROM-AIMAP{RESET}  {c(DIM, filepath)}"
+          f"  {c(GREEN, str(len(targets)) + ' target(s)')}\n", use_color)
+
+    summary = []
+    for host, port, aimap_svc in targets:
+        svc = service_override if service_override != "auto" else aimap_svc
+        _emit("─" * 64, use_color)
+        _emit(f"  {c(DIM, 'aimap hint:')} {c(CYAN, host)}:{c(CYAN, str(port))}"
+              f"  {c(DIM, aimap_svc + ' → ' + svc)}", use_color)
+        results, elapsed, detected_svc, ctx = engine.run(host, port, svc, active=active)
+        _emit(render(results, host, port, detected_svc, elapsed), use_color)
+        engine.save(host, port, detected_svc, results, elapsed, ctx)
+        summary.append({"host": host, "port": port, "svc": detected_svc,
+                        "open": len(ctx.get("open_paths", [])),
+                        "surfaces": ctx.get("exploit_surfaces", [])})
+
+    _ranked_summary(summary, use_color, "AIMAP SUMMARY")
+
+
 def _print_last_report() -> None:
     path = os.path.join(snake_home(), "last.json")
     try:
@@ -920,6 +1065,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="allow the INFERENCE stage to invoke the target's compute "
                          "(submits a minimal, non-retained probe). Off by default.")
     ap.add_argument("--batch", "-b", metavar="FILE", help="file of host:port lines")
+    ap.add_argument("--from-aimap", metavar="FILE",
+                    help="run chain against every service in an aimap JSON report")
     ap.add_argument("--report", metavar="last", help="print the last saved report")
     ap.add_argument("--json", "-j", action="store_true", help="emit JSON instead of a report")
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colour")
@@ -935,13 +1082,21 @@ def main(argv=None) -> int:
         _print_last_report()
         return 0
 
+    if args.from_aimap:
+        run_from_aimap(args.from_aimap, args.service, active=args.active, use_color=use_color)
+        return 0
+
     if args.batch:
         run_batch(args.batch, args.service, active=args.active, use_color=use_color)
         return 0
 
-    if not args.host or not args.port:
+    if not args.host:
         build_parser().print_help()
         return 1
+
+    if not args.port:
+        run_discover(args.host, args.service, active=args.active, use_color=use_color)
+        return 0
 
     results, elapsed, service, ctx = run(args.host, args.port, args.service, active=args.active)
 
