@@ -218,12 +218,12 @@ def s_auth(session, host, port, ctx) -> StageResult:
     open_p: list[str] = []
     gated_p: list[str] = []
     for p in probe[:14]:
-        r = get(session, base + p, timeout=4)
+        r = get(session, base + p, timeout=4, allow_redirects=False)
         if r is None:
             continue
         if r.status_code == 200:
             open_p.append(p)
-        elif r.status_code in (401, 403):
+        elif r.status_code in (301, 302, 307, 308, 401, 403):
             gated_p.append(p)
     ctx.update({"open_paths": open_p, "gated_paths": gated_p})
     detail = {"open": open_p, "gated": gated_p}
