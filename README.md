@@ -7,7 +7,7 @@ ENDPOINT → SCHEMA → AUTH → ENUM → INVENTORY → DATA
   → INFERENCE → EXPLOIT-SURFACE → CHAIN → STORAGE → MONITORING → SUMMARY
 ```
 
-Snake is a **verification tool**, not a discovery scanner. The load-bearing stage is turning a *candidate* into a *confirmed, evidenced finding*. Pair it with [aimap](https://github.com/nuclide-research/aimap) for the full discovery-to-finding pipeline.
+Snake is a **verification tool**, not a discovery scanner. The load-bearing stage is turning a *candidate* into a *confirmed, evidenced finding*. Pair it with [aimap](https://github.com/zellkernel/aimap) for the full discovery-to-finding pipeline.
 
 > **Authorized use only.** Run this only against infrastructure you own or are explicitly permitted to assess. With `--active`, it spends a target's compute. See [Safe-by-default](#safe-by-default).
 
@@ -254,7 +254,7 @@ snake 10.0.1.5 443 --json
 
 ## aimap → snake workflow
 
-[aimap](https://github.com/nuclide-research/aimap) fingerprints AI/ML services across 36 platform types. Snake reads aimap's JSON output and carries the service identification forward so it doesn't re-detect what aimap already confirmed.
+[aimap](https://github.com/zellkernel/aimap) fingerprints AI/ML services across 36 platform types. Snake reads aimap's JSON output and carries the service identification forward so it doesn't re-detect what aimap already confirmed.
 
 ```
 aimap                               snake
