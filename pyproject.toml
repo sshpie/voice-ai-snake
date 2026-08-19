@@ -9,7 +9,7 @@ description = "Voice AI verification snake — a 12-stage service verification c
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [{ name = "NuClide Research" }]
+authors = [{ name = "" }]
 keywords = ["security", "ai", "llm", "voice-ai", "scanner", "verification", "assessment"]
 classifiers = [
     "Development Status :: 4 - Beta",

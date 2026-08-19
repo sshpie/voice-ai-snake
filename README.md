@@ -489,4 +489,4 @@ The test suite mocks all HTTP with a routing `FakeSession` and redirects `SNAKE_
 
 ## License
 
-MIT © 2026 NuClide Research. See [LICENSE](LICENSE).
+MIT © 2026 . See [LICENSE](LICENSE).

@@ -27,7 +27,7 @@ from urllib3.exceptions import InsecureRequestWarning
 
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-# ── ANSI palette (NuClide dark: cyan structure, magenta critical) ──────────────
+# ── ANSI palette ( dark: cyan structure, magenta critical) ──────────────
 RESET = "\033[0m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
