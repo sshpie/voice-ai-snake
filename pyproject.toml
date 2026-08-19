@@ -40,9 +40,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/zellkernel/voice-ai-snake"
-Repository = "https://github.com/zellkernel/voice-ai-snake"
-Issues = "https://github.com/zellkernel/voice-ai-snake/issues"
+Homepage = "https://github.com/sshpie/voice-ai-snake"
+Repository = "https://github.com/sshpie/voice-ai-snake"
+Issues = "https://github.com/sshpie/voice-ai-snake/issues"
 
 [project.scripts]
 snake = "snake_scanner.cli:entry"
